@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2025 關西山陽楓葉冒險 | Kansai & Sanyo Trip</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+    <style>
+        body { font-family: 'Noto Sans TC', 'Noto Sans JP', sans-serif; background-color: #F3F4F6; }
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        #map-container { z-index: 1; }
+        .gps-pulse {
+            width: 14px; height: 14px; border: 2px solid #fff; border-radius: 50%;
+            background-color: #3b82f6; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.4);
+            animation: pulse-blue 2s infinite;
+        }
+        @keyframes pulse-blue {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+    </style>
+</head>
+<body class="text-slate-700 h-screen flex flex-col overflow-hidden">
+
+    <div id="app" class="flex flex-col h-full max-w-md mx-auto w-full bg-white shadow-2xl relative sm:rounded-xl sm:my-4 sm:h-[95vh] sm:border-4 sm:border-slate-100">
+
+        <header class="bg-teal-600 text-white shrink-0 z-20 shadow-md">
+            <div class="p-4 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <div class="overflow-hidden">
+                        <h1 class="text-lg font-bold tracking-wide flex items-center gap-2 truncate">
+                            {{ setup.destination }} <i class="ph-fill ph-camera text-sm opacity-70"></i>
+                        </h1>
+                        <p class="text-xs text-teal-100 mt-0.5 font-light tracking-wider truncate">12/05 - 12/14 (10天)</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <div class="flex bg-teal-800/50 p-1 rounded-lg">
+                        <button @click="viewMode = 'plan'" :class="viewMode === 'plan' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-200'" class="p-2 rounded-md transition-all"><i class="ph-bold ph-calendar-check text-lg"></i></button>
+                        <button @click="viewMode = 'map'" :class="viewMode === 'map' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-200'" class="p-2 rounded-md transition-all"><i class="ph-bold ph-map-trifold text-lg"></i></button>
+                        <button @click="viewMode = 'money'" :class="viewMode === 'money' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-200'" class="p-2 rounded-md transition-all"><i class="ph-bold ph-currency-dollar text-lg"></i></button>
+                        <button @click="viewMode = 'checklist'" :class="viewMode === 'checklist' ? 'bg-white text-teal-700 shadow-sm' : 'text-teal-200'" class="p-2 rounded-md transition-all"><i class="ph-bold ph-check-square text-lg"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div v-if="viewMode === 'plan' || viewMode === 'map'" class="flex overflow-x-auto hide-scroll px-2 pb-3 space-x-3 snap-x">
+                <div v-for="(day, index) in days" :key="index" @click="currentDayIdx = index" class="snap-center shrink-0 flex flex-col items-center justify-center w-14 h-16 rounded-xl cursor-pointer transition-all border-2" :class="currentDayIdx === index ? 'bg-white text-teal-600 border-white shadow-lg scale-105' : 'bg-teal-500/50 text-teal-100 border-transparent hover:bg-teal-500'">
+                    <span class="text-[10px] font-medium opacity-80">{{ day.shortDate }}</span>
+                    <span class="text-sm font-bold">D{{ index + 1 }}</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 overflow-y-auto bg-slate-50 relative hide-scroll">
+            
+            <transition name="fade" mode="out-in">
+                <div v-if="viewMode === 'plan'" :key="currentDayIdx" class="p-4 pb-24">
+                    <div class="bg-white p-4 rounded-2xl shadow-sm mb-4 border border-slate-100 flex justify-between items-center">
+                        <div>
+                            <div class="text-xl font-bold text-slate-800">{{ currentDay.date }}</div>
+                            <div class="text-sm text-slate-500 mt-1">{{ currentDay.title }}</div>
+                        </div>
+                    </div>
+
+                    <div v-if="currentDay.flight" class="mb-6 relative bg-gradient-to-r from-blue-600 to-teal-500 rounded-2xl text-white shadow-lg overflow-hidden p-4">
+                         <div class="flex justify-between items-center pt-2">
+                            <div class="flex flex-col items-center w-1/3">
+                                <span class="text-2xl font-black font-mono">{{ currentDay.flight.startTime }}</span>
+                                <span class="text-sm font-bold opacity-90">{{ currentDay.flight.startAirport }}</span>
+                            </div>
+                            <div class="flex flex-col items-center w-1/3">
+                                <i class="ph-fill ph-airplane text-2xl mb-1 transform rotate-90"></i>
+                                <span class="text-[10px] font-mono tracking-widest opacity-80">{{ currentDay.flight.number }}</span>
+                            </div>
+                            <div class="flex flex-col items-center w-1/3">
+                                <span class="text-2xl font-black font-mono">{{ currentDay.flight.endTime }}</span>
+                                <span class="text-sm font-bold opacity-90">{{ currentDay.flight.endAirport }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="relative pl-4 border-l-2 border-teal-100 space-y-6">
+                        <div v-for="(item, idx) in currentDay.items" :key="idx" class="relative group">
+                            <div class="absolute -left-[21px] top-3 w-3 h-3 rounded-full border-2 border-white shadow-sm" :class="getDotColor(item.type)"></div>
+                            <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-100">
+                                <div class="flex items-start gap-3">
+                                    <div class="flex flex-col items-center w-16 shrink-0 pt-1">
+                                        <span class="text-lg font-bold text-slate-700 font-mono leading-none">{{ item.time.split('~')[0] }}</span>
+                                        <span class="text-[10px] text-slate-400 mt-1">{{ item.time.split('~')[1] }}</span>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="font-bold text-slate-800 text-sm">{{ item.activity }}</div>
+                                        <div v-if="item.location && item.location !== item.activity" class="flex items-center gap-1 mt-1 text-xs text-teal-600">
+                                            <i class="ph-fill ph-map-pin"></i> {{ item.location }}
+                                        </div>
+                                        <div v-if="item.note" class="mt-2 text-xs text-slate-500 bg-slate-50 p-2 rounded border border-slate-100 whitespace-pre-line">
+                                            <span class="text-orange-500 font-bold mr-1">Note:</span>{{ item.note }}
+                                        </div>
+                                        <div v-if="item.url" class="mt-2">
+                                            <a :href="item.url" target="_blank" class="text-[10px] bg-blue-50 text-blue-500 px-2 py-1 rounded inline-flex items-center gap-1 hover:bg-blue-100">
+                                                <i class="ph-bold ph-link"></i> 相關連結
+                                            </a>
+                                        </div>
+                                        <div v-if="item.location" class="mt-2 flex gap-2">
+                                            <a :href="`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.location)}`" target="_blank" class="text-[10px] border border-teal-200 text-teal-600 px-2 py-0.5 rounded-full flex items-center gap-1 hover:bg-teal-50">
+                                                <i class="ph-bold ph-google-logo"></i> Google Maps
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </transition>
+
+            <div v-if="viewMode === 'map'" class="h-full flex flex-col relative">
+                <div id="map" class="flex-1 w-full h-full bg-slate-200 z-0"></div>
+                <div class="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur rounded-xl p-3 shadow-lg border border-white/50 z-10 flex justify-between items-center">
+                    <div class="text-sm font-bold text-slate-800">D{{ currentDayIdx + 1 }} 共有 {{ currentDay.items.filter(i=>i.location).length }} 個地點</div>
+                    <button @click="initMap" class="p-2 bg-teal-100 text-teal-600 rounded-lg"><i class="ph-bold ph-arrows-clockwise"></i></button>
+                </div>
+            </div>
+
+            <div v-if="viewMode === 'money'" class="p-4 pb-24">
+                <div class="bg-teal-600 text-white rounded-2xl p-6 shadow-lg mb-6 text-center">
+                    <div class="text-sm opacity-80 mb-1">預估總支出</div>
+                    <div class="text-4xl font-bold font-mono">¥ {{ totalExpense.toLocaleString() }}</div>
+                    <div class="text-sm font-bold text-teal-200 mt-2">約 NT$ {{ Math.round(totalExpense * 0.21).toLocaleString() }}</div>
+                </div>
+                
+                <h3 class="font-bold text-slate-700 mb-3 px-1">支出明細 (來自行程表)</h3>
+                <div class="space-y-3">
+                    <div v-for="(exp, idx) in expenses" :key="idx" class="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600"><i class="ph-fill ph-coins"></i></div>
+                            <div>
+                                <div class="font-bold text-slate-700 text-sm">{{ exp.item }}</div>
+                                <div class="text-[10px] text-slate-400">{{ exp.date }}</div>
+                            </div>
+                        </div>
+                        <span class="font-mono font-bold text-slate-700">¥{{ exp.amount.toLocaleString() }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="viewMode === 'checklist'" class="p-4 pb-24">
+                <div class="mb-6">
+                    <h2 class="text-xl font-bold text-slate-800 mb-2">出發前檢查</h2>
+                    <div class="w-full bg-slate-200 rounded-full h-2.5 mb-1">
+                        <div class="bg-teal-600 h-2.5 rounded-full transition-all duration-500" :style="{ width: checklistProgress + '%' }"></div>
+                    </div>
+                    <div class="text-right text-xs text-teal-600 font-bold">{{ checklistProgress }}% 完成</div>
+                </div>
+
+                <div v-for="(group, gName) in checklistGroups" :key="gName" class="mb-6">
+                    <h3 class="font-bold text-teal-700 mb-2 border-b border-teal-100 pb-1">{{ gName }}</h3>
+                    <div class="space-y-2">
+                        <div v-for="(item, idx) in group" :key="idx" 
+                             @click="item.checked = !item.checked"
+                             class="flex items-center p-3 rounded-xl border transition-all cursor-pointer"
+                             :class="item.checked ? 'bg-teal-50 border-teal-200' : 'bg-white border-slate-100'">
+                            <div class="w-5 h-5 rounded border flex items-center justify-center mr-3"
+                                 :class="item.checked ? 'bg-teal-500 border-teal-500' : 'border-slate-300'">
+                                <i v-if="item.checked" class="ph-bold ph-check text-white text-xs"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="text-sm font-medium" :class="item.checked ? 'text-teal-800 line-through opacity-70' : 'text-slate-700'">{{ item.name }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script type="module">
+        import { createApp, ref, computed, watch, nextTick, reactive } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js'
+
+        // --- 行程資料 (從 CSV 轉換而來) ---
+        const tripData = [
+            {
+                date: "12/05 (五)", shortDate: "12/05", title: "出發 & 京都移動日",
+                flight: { startTime: "11:00", startAirport: "TPE", endTime: "14:35", endAirport: "OKJ", number: "IT214" },
+                items: [
+                    { time: "07:13~08:36", type: "transport", activity: "前往桃園機場", location: "桃園高鐵站", note: "1.計程車達桃園機場\n2.高鐵 0606車次" },
+                    { time: "11:00~14:35", type: "flight", activity: "飛往岡山", location: "岡山機場", note: "虎航IT214" },
+                    { time: "15:55~16:25", type: "transport", activity: "前往岡山車站", location: "岡山站", note: "有配合班機的臨時巴士，最快15:30可達市區" },
+                    { time: "16:40~17:43", type: "transport", activity: "新幹線往京都", location: "京都站", note: "1.搭山陽新幹線(車票已買)\n2.買便當\n3.太晚到就在車上改下一班車", cost: 3317 },
+                    { time: "18:00~18:30", type: "spot", activity: "飯店 Check-in", location: "ホテル京阪 京都 グランデ", note: "放行李休息", cost: 76664 },
+                    { time: "18:30~20:00", type: "spot", activity: "仁和寺 (可能已關門，視情況)", location: "仁和寺", note: "1.山陰本線到花園走路或轉計程車\n2.京都車站計程車直達", cost: 3300 },
+                    { time: "20:00~22:00", type: "food", activity: "晚餐", location: "山內農場", note: "餓的話吃吃" }
+                ]
+            },
+            {
+                date: "12/06 (六)", shortDate: "12/06", title: "京都租車 & 宇治",
+                items: [
+                    { time: "09:00~09:30", type: "transport", activity: "取車", location: "京都新幹線口 times car", note: "取車" },
+                    { time: "09:23~10:00", type: "transport", activity: "前往楊谷寺", location: "長岡京楊谷寺", note: "走府道79號", url: "https://www.okayama-japan.jp/tw/13152" },
+                    { time: "10:00~12:00", type: "spot", activity: "楊谷寺散策", location: "柳谷觀音 楊谷寺", note: "" },
+                    { time: "12:00~12:20", type: "transport", activity: "前往光明寺", location: "光明寺", note: "" },
+                    { time: "12:20~13:30", type: "food", activity: "午餐", location: "いっぷく亭 光明寺門前店", note: "吃飽飽" },
+                    { time: "13:30~15:30", type: "spot", activity: "光明寺參拜", location: "光明寺", note: "重點在紅葉參道，進去後先直達那邊拍空景" },
+                    { time: "15:30~16:30", type: "spot", activity: "長岡天滿宮", location: "長岡天滿宮", note: "" },
+                    { time: "16:30~17:00", type: "transport", activity: "前往宇治", location: "宇治", note: "", cost: 11385 },
+                    { time: "17:00~19:00", type: "food", activity: "晚餐：鰻魚飯", location: "うな好", note: "炭焼き肉と京の野菜 Nico 備案" },
+                    { time: "19:00~21:00", type: "spot", activity: "平等院夜間拜觀", location: "平等院", note: "夜間拜觀", cost: 3000 }
+                ]
+            },
+            {
+                date: "12/07 (日)", shortDate: "12/07", title: "叡山電車 & 銀閣寺",
+                items: [
+                    { time: "08:15~08:45", type: "transport", activity: "停車", location: "京都市出町駐車場", note: "MapCode: 7 706 565*55" },
+                    { time: "09:00~09:31", type: "transport", activity: "搭乘叡山電車", location: "二之瀨站", note: "下一班 09:15~09:46" },
+                    { time: "09:31~09:40", type: "transport", activity: "步行", location: "白龍園", note: "" },
+                    { time: "10:00~11:30", type: "spot", activity: "白龍園散策", location: "白龍園", note: "預約番號 : 11HVK0RBW" },
+                    { time: "11:30~11:41", type: "transport", activity: "返回出町柳", location: "出町柳", note: "" },
+                    { time: "12:15~12:30", type: "transport", activity: "前往銀閣寺停車", location: "京都市銀閣寺觀光停車場", note: "費用：自小客車一次 1040 日圓。若滿了請找路邊 Coin Parking。" },
+                    { time: "12:30~12:45", type: "spot", activity: "銀閣寺", location: "銀閣寺", note: "" },
+                    { time: "12:50~13:50", type: "food", activity: "午餐", location: "世續茶屋", note: "鯡魚蕎麥麵、抹茶蕎麥麵" },
+                    { time: "13:50~14:50", type: "spot", activity: "銀閣寺周邊", location: "Yojiya Café 銀閣寺店", note: "" },
+                    { time: "14:50~16:00", type: "spot", activity: "安樂寺", location: "安樂寺", note: "1.特別拜觀 2.步行約10分鐘" },
+                    { time: "16:15~18:00", type: "spot", activity: "飯店休息", location: "ホテル京阪 京都 グランデ", note: "" },
+                    { time: "19:30~21:00", type: "spot", activity: "建仁寺夜間拜觀", location: "建仁寺", note: "搭車到四條" }
+                ]
+            },
+            {
+                date: "12/08 (一)", shortDate: "12/08", title: "滋賀自駕遊：石山寺 & 永源寺",
+                items: [
+                    { time: "08:30~09:10", type: "transport", activity: "前往石山寺", location: "石山寺觀光停車場", note: "MapCode: 7 206 726*25 (一次600日圓)" },
+                    { time: "09:10~10:30", type: "spot", activity: "石山寺散策", location: "石山寺", note: "多寶塔、源氏之間" },
+                    { time: "10:30~11:30", type: "food", activity: "午餐：近江牛", location: "近江牛 岡喜 本店", note: "MapCode: 67 743 194*33 (附設免費停車場)", url: "https://nicklee.tw/963/hiei-zan/" },
+                    { time: "12:30~12:45", type: "transport", activity: "前往長壽寺", location: "長壽寺", note: "" },
+                    { time: "12:45~13:25", type: "spot", activity: "長壽寺散策", location: "湖南三山 長壽寺", note: "MapCode: 67 626 558*66。參道紅葉美，地勢平坦對長輩友善。" },
+                    { time: "13:25~14:00", type: "transport", activity: "前往永源寺", location: "永源寺", note: "MapCode: 264 456 313*85 (旦度橋停車場)" },
+                    { time: "14:00~15:30", type: "spot", activity: "永源寺散策", location: "永源寺", note: "" },
+                    { time: "16:50~17:10", type: "transport", activity: "加油", location: "ENEOS Dr.Drive 九条店", note: "京都市南区西九条大国町9-2" },
+                    { time: "17:10~18:00", type: "transport", activity: "還車", location: "京都站", note: "" }
+                ]
+            },
+            {
+                date: "12/09 (二)", shortDate: "12/09", title: "京都神社巡禮",
+                items: [
+                    { time: "08:30~09:00", type: "transport", activity: "移動", location: "國際會館站", note: "地鐵烏丸線到北山站" },
+                    { time: "09:00~09:20", type: "transport", activity: "前往上賀茂", location: "上賀茂神社", note: "搭計程車" },
+                    { time: "09:20~10:20", type: "spot", activity: "上賀茂神社", location: "上賀茂神社", note: "神馬、立砂" },
+                    { time: "10:20~10:40", type: "transport", activity: "移動", location: "下鴨神社", note: "計程車" },
+                    { time: "10:40~12:00", type: "spot", activity: "下鴨神社 & 糾之森", location: "下鴨神社", note: "御守" },
+                    { time: "12:00~12:20", type: "transport", activity: "移動", location: "六角堂", note: "計程車" },
+                    { time: "12:20~13:30", type: "food", activity: "午餐", location: "星巴克 六角堂", note: "輕食" },
+                    { time: "13:30~14:10", type: "spot", activity: "六角堂散策", location: "頂法寺 六角堂", note: "" },
+                    { time: "14:10~14:30", type: "transport", activity: "步行", location: "因幡堂", note: "約850公尺" },
+                    { time: "14:30~15:30", type: "spot", activity: "因幡堂", location: "因幡堂 (平等寺)", note: "健康御守、六貓御守" }
+                ]
+            },
+            {
+                date: "12/10 (三)", shortDate: "12/10", title: "移動日：前往岡山 & 倉敷",
+                items: [
+                    { time: "08:34~09:34", type: "transport", activity: "新幹線往岡山", location: "岡山車站", note: "下一班 08:47~09:46。開始使用 JR PASS。" },
+                    { time: "09:40~10:00", type: "transport", activity: "取車", location: "Times Car", note: "番號202502832374" },
+                    { time: "10:00~10:20", type: "transport", activity: "前往吉備津彥", location: "吉備津彥神社", note: "MapCode: 19 555 464*44" },
+                    { time: "10:20~11:10", type: "spot", activity: "吉備津彥神社", location: "吉備津彥神社", note: "" },
+                    { time: "11:10~11:20", type: "transport", activity: "前往吉備津神社", location: "吉備津神社", note: "MapCode: 19 554 125*82。桃太郎茶坊(烏龍麵)" },
+                    { time: "13:00~14:00", type: "spot", activity: "備中國分寺", location: "備中國分寺", note: "MapCode: 19 548 786*41。五重塔，旁有免費停車場。" },
+                    { time: "14:00~14:30", type: "transport", activity: "前往倉敷", location: "倉敷美觀地區", note: "倉敷市市營中央停車場 MapCode: 19 633 131*52" },
+                    { time: "14:30~18:00", type: "spot", activity: "倉敷美觀散策", location: "倉敷美觀", note: "語らい座大原本邸、大智神社" },
+                    { time: "18:00~18:30", type: "spot", activity: "飯店 Check-in", location: "三井花園飯店岡山", note: "MapCode: 19 891 228*47", cost: 23954 },
+                    { time: "18:30~20:00", type: "food", activity: "晚餐", location: "AEON Mall 岡山", note: "" }
+                ]
+            },
+            {
+                date: "12/11 (四)", shortDate: "12/11", title: "尾道 & 鞆之浦",
+                items: [
+                    { time: "08:30~09:50", type: "transport", activity: "前往千光寺", location: "千光寺公園", note: "MapCode: 48 221 685*55 (山頂停車場)" },
+                    { time: "09:50~11:00", type: "spot", activity: "千光寺公園", location: "千光寺", note: "走平路去展望台俯瞰尾道水道。不去貓之細道了(太陡)。" },
+                    { time: "11:00~11:20", type: "transport", activity: "前往午餐", location: "ONOMICHI U2", note: "MapCode: 48 188 662*33" },
+                    { time: "11:20~12:40", type: "food", activity: "午餐", location: "ONOMICHI U2", note: "餐廳平面無障礙，氣氛好，旁邊就是海港。" },
+                    { time: "12:40~13:30", type: "transport", activity: "前往鞆之浦", location: "鞆之浦", note: "MapCode: 465 464 639*82" },
+                    { time: "13:30~14:40", type: "spot", activity: "鞆之浦散策", location: "鞆之浦 常夜燈", note: "幾乎平地，可找海邊咖啡廳(御舟宿伊吕波)。" },
+                    { time: "14:40~15:10", type: "transport", activity: "前往明王院", location: "明王院", note: "MapCode: 465 249 253*88" },
+                    { time: "15:40~15:50", type: "transport", activity: "前往福山城", location: "福山城", note: "MapCode: 465 251 771*33" },
+                    { time: "18:00~18:30", type: "spot", activity: "福山城拍照", location: "福山站", note: "進 JR 福山站買「入場券」，上新幹線月台拍「新幹線+城堡」大景。" }
+                ]
+            },
+            {
+                date: "12/12 (五)", shortDate: "12/12", title: "岡山城 & 神戶布引香草園",
+                items: [
+                    { time: "08:40~09:00", type: "transport", activity: "停車", location: "烏城公園", note: "MapCode: 19 892 112*14" },
+                    { time: "09:00~10:00", type: "spot", activity: "岡山城", location: "岡山城", note: "天守閣、喝咖啡" },
+                    { time: "10:00~11:00", type: "spot", activity: "後樂園", location: "岡山後樂園", note: "" },
+                    { time: "11:00~11:30", type: "transport", activity: "加油", location: "ENEOS 岡山站西口店", note: "MapCode: 19 890 531*55" },
+                    { time: "11:30~12:00", type: "transport", activity: "還車", location: "岡山站", note: "" },
+                    { time: "12:22~12:54", type: "transport", activity: "新幹線往新神戶", location: "新神戶站", note: "Hikari 510號" },
+                    { time: "13:00~13:30", type: "spot", activity: "布引香草園纜車", location: "神戶布引香草園", note: "搭纜車上山" },
+                    { time: "13:30~14:30", type: "food", activity: "午餐", location: "The Veranda", note: "山頂景觀餐廳" },
+                    { time: "16:00~16:20", type: "transport", activity: "下山", location: "新神戶站", note: "" },
+                    { time: "16:20~17:00", type: "spot", activity: "生田神社", location: "生田神社", note: "計程車約20分" },
+                    { time: "17:00~19:00", type: "food", activity: "晚餐：燒肉", location: "炭焼肉 石田屋。Hanare", note: "" },
+                    { time: "19:23~20:23", type: "transport", activity: "返回京都", location: "ホテル京阪 京都 グランデ", note: "JR 新快速 直達京都，JR Pass 免費。", cost: 46454 }
+                ]
+            },
+            {
+                date: "12/13 (六)", shortDate: "12/13", title: "大阪箕面 & 難波",
+                items: [
+                    { time: "09:00~09:24", type: "transport", activity: "前往新大阪", location: "新大阪站", note: "JR 京都線" },
+                    { time: "10:10~10:36", type: "transport", activity: "巴士往勝尾寺", location: "箕面萱野站", note: "巴士 30 系統" },
+                    { time: "10:40~12:30", type: "spot", activity: "勝尾寺", location: "勝尾寺", note: "達摩牆必拍！買「勝運達摩」。" },
+                    { time: "13:00~14:00", type: "food", activity: "午餐", location: "箕面 Q's Mall", note: "" },
+                    { time: "14:00~14:40", type: "transport", activity: "前往難波", location: "難波", note: "地鐵御堂筋線直通" },
+                    { time: "15:00~15:40", type: "spot", activity: "難波八阪神社", location: "難波八阪神社", note: "獅子殿" },
+                    { time: "16:00~18:00", type: "spot", activity: "梅田藍天大廈", location: "梅田藍天大廈", note: "空中庭園展望台、德國聖誕市集" },
+                    { time: "18:00~19:30", type: "food", activity: "晚餐", location: "Grand Front Osaka", note: "" }
+                ]
+            },
+            {
+                date: "12/14 (日)", shortDate: "12/14", title: "大阪城 & 返台",
+                flight: { startTime: "16:03", startAirport: "OSAKA", endTime: "16:50", endAirport: "KIX", number: "HARUKA" },
+                items: [
+                    { time: "09:20~09:30", type: "spot", activity: "Check Out", location: "ホテル京阪 京都 グランデ", note: "" },
+                    { time: "10:15~10:45", type: "transport", activity: "寄放行李", location: "JR 大阪站", note: "務必寄放在「梅北地下口」附近，方便搭 Haruka。" },
+                    { time: "11:45~13:30", type: "spot", activity: "大阪城", location: "大阪城", note: "搭乘 JR 大阪環狀線" },
+                    { time: "13:30~15:00", type: "spot", activity: "大阪歷史博物館", location: "大阪歷史博物館", note: "10樓俯瞰難波宮遺跡" },
+                    { time: "16:03~16:50", type: "transport", activity: "Haruka 往機場", location: "關西機場", note: "大阪站地下月台 21號線發車。PASS 免費。", url: "" },
+                    { time: "17:00~18:30", type: "food", activity: "晚餐", location: "關西機場", note: "ぼてぢゅう (大阪燒)、杵屋 (烏龍麵)" },
+                    { time: "18:30~22:40", type: "flight", activity: "返台", location: "桃園機場", note: "平安回家" }
+                ]
+            }
+        ];
+
+        // --- 檢查清單資料 (從 Checklist CSV 轉換) ---
+        const checklistSource = {
+            "隨身/重要物品": [
+                { name: "護照", checked: false },
+                { name: "錢包 (日幣: 203,800 / 台幣)", checked: false },
+                { name: "信用卡", checked: false },
+                { name: "健保卡 / 身分證", checked: false },
+                { name: "Visit Japan Web QR Code", checked: false },
+                { name: "登機證", checked: false },
+                { name: "iPhone + 充電線 + 豆腐頭", checked: false },
+                { name: "AirPods", checked: false }
+            ],
+            "攝影裝備 (重點!)": [
+                { name: "相機包 (<= 7Kg)", checked: false },
+                { name: "雙機身 (Z7II + Z6)", checked: false },
+                { name: "三鏡頭 (14-24 + 50 + 105)", checked: false },
+                { name: "腳架 + 快拆版", checked: false },
+                { name: "電池 x3", checked: false },
+                { name: "充電器一組", checked: false },
+                { name: "記憶卡盒", checked: false },
+                { name: "清潔組", checked: false },
+                { name: "濾鏡 x3", checked: false }
+            ],
+            "衣物與生活": [
+                { name: "行李箱 (<= 32Kg)", checked: false },
+                { name: "七天份衣服", checked: false },
+                { name: "七天份內衣褲", checked: false },
+                { name: "褲子 x3", checked: false },
+                { name: "厚外套", checked: false },
+                { name: "牙刷", checked: false },
+                { name: "牙籤、棉花棒", checked: false },
+                { name: "落建 x1", checked: false },
+                { name: "真空吸引機 + 小真空袋", checked: false }
+            ],
+            "其他": [
+                { name: "筆電 + 電源", checked: false },
+                { name: "SSD 隨身碟", checked: false },
+                { name: "讀卡機 + 線", checked: false },
+                { name: "行動電源", checked: false },
+                { name: "電子秤", checked: false }
+            ]
+        };
+
+        createApp({
+            setup() {
+                const viewMode = ref('plan');
+                const currentDayIdx = ref(0);
+                const setup = ref({ destination: 'Kansai, Japan' });
+                const days = ref(tripData);
+                const checklistGroups = reactive(checklistSource);
+
+                // 計算清單進度
+                const checklistProgress = computed(() => {
+                    let total = 0;
+                    let checked = 0;
+                    for (const group in checklistGroups) {
+                        checklistGroups[group].forEach(item => {
+                            total++;
+                            if (item.checked) checked++;
+                        });
+                    }
+                    return total === 0 ? 0 : Math.round((checked / total) * 100);
+                });
+
+                const currentDay = computed(() => days.value[currentDayIdx.value]);
+                
+                // 處理支出 (從 items 中自動提取 cost 欄位)
+                const expenses = computed(() => {
+                    let list = [];
+                    days.value.forEach(day => {
+                        day.items.forEach(item => {
+                            if (item.cost) {
+                                list.push({
+                                    item: item.activity,
+                                    amount: parseInt(item.cost),
+                                    date: day.shortDate,
+                                    payer: '我'
+                                });
+                            }
+                        });
+                    });
+                    // 手動加入機票
+                    list.push({ item: '中華航空機票', amount: 0, date: 'Pre-trip', payer: '我' }); // CSV 金額在台幣欄位
+                    list.push({ item: '虎航機票', amount: 0, date: 'Pre-trip', payer: '我' });
+                    return list;
+                });
+
+                const totalExpense = computed(() => expenses.value.reduce((sum, item) => sum + item.amount, 0));
+
+                // Helper Functions
+                const getDotColor = (t) => t==='food'?'bg-orange-400':t==='spot'?'bg-teal-500':t==='flight'?'bg-blue-500':'bg-slate-400';
+                
+                // Map
+                let mapInstance = null;
+                const initMap = async () => {
+                    await nextTick();
+                    if (!document.getElementById('map')) return;
+                    if (mapInstance) { mapInstance.remove(); mapInstance = null; }
+                    mapInstance = L.map('map').setView([35.0116, 135.7681], 10); // Default Kyoto
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(mapInstance);
+                    
+                    const locs = currentDay.value.items.filter(i => i.location);
+                    const bounds = L.latLngBounds();
+                    
+                    // 這裡簡單模擬，實際上可能需要 Geocoding API
+                    // 為求示範，我讓地圖嘗試自動抓取地點 (若瀏覽器支援)
+                    for (const item of locs) {
+                        try { 
+                            // 呼叫 Nominatim API 抓座標 (每秒限制 1 次，這裡設延遲)
+                            await new Promise(r => setTimeout(r, 600)); 
+                            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(item.location)}`); 
+                            const d = await res.json(); 
+                            if (d && d.length > 0) { 
+                                const lat = parseFloat(d[0].lat); 
+                                const lon = parseFloat(d[0].lon); 
+                                L.marker([lat, lon]).addTo(mapInstance)
+                                 .bindPopup(`<b>${item.activity}</b><br>${item.location}`); 
+                                bounds.extend([lat, lon]); 
+                            } 
+                        } catch (e) {}
+                    }
+                    if(locs.length > 0 && !bounds.isValid()) {
+                         // Fallback view if no bounds found
+                    } else if (bounds.isValid()) {
+                        mapInstance.fitBounds(bounds, { padding: [50, 50] });
+                    }
+                };
+
+                watch(viewMode, (v) => { if(v === 'map') initMap(); });
+                watch(currentDayIdx, () => { if(viewMode.value === 'map') initMap(); });
+
+                return {
+                    viewMode, currentDayIdx, days, currentDay, setup,
+                    getDotColor, initMap,
+                    expenses, totalExpense,
+                    checklistGroups, checklistProgress
+                };
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
